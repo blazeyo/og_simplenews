@@ -1,0 +1,10 @@
+name = Organic groups simplenews
+description = Provides a newsletter for every organic group
+
+core = 6.x
+
+dependencies[] = og
+dependencies[] = simplenews
+dependencies[] = views
+
+package = AAA Meant4

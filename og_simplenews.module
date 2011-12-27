@@ -1,0 +1,227 @@
+<?php
+/**
+ * Dec 20, 2011
+ * @file og_simplenews.module
+ * @author blazey http://drupal.org/user/353861
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function og_simplenews_menu() {
+  $items['newsletter'] = array(
+    'title' => 'Newsletter settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_simplenews_manager_form'),
+    'access callback' => 'og_simplenews_manager_access',
+    'file' => 'og_simplenews.pages.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_nodeapi().
+ */
+function og_simplenews_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  if ($op == 'insert') {
+
+    // Act only on newly created og group nodes.
+    if (og_is_group_type($node->type) && $node->uid) {
+      og_simplenews_new_group_newsletter($node, $node->title);
+    }
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function og_simplenews_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'simplenews_node_form') {
+
+    // Hide newsletter term select and provide default value based on group we
+    // are currently in.
+    $node = og_get_group_context();
+    if ($node) {
+      
+      // Don't allow anyone exept admins to send newsletters.
+      if (!og_is_group_admin($node)) {
+        drupal_access_denied();
+        exit();
+      }
+      $vid = og_simplenews_vid();
+
+      $terms = og_simplenews_get_group_newsletter_terms($node);
+      foreach ($form['taxonomy'][$vid]['#options'] as $key => $value) {
+
+        // This is weird but in scholar taxonomy select options are objects.
+        if (is_object($value) && is_array($value->option)) {
+          $tid = array_shift(array_flip($value->option));
+        } else {
+          $tid = $key;
+        }
+        
+        if (is_numeric($tid) && !array_key_exists($tid, $terms)) {
+          unset($form['taxonomy'][$vid]['#options'][$key]);
+        }
+      }
+
+//      drupal_add_css(drupal_get_path('module', 'og_simplenews') . '/og_simplenews.css');
+//      $newsletter_term = og_simplenews_get_group_newsletter_term($node);
+//      $form['taxonomy'][$newsletter_term->vid]['#options'] = array($newsletter_term->tid => $newsletter_term->tid);
+//      $form['taxonomy'][$newsletter_term->vid]['#default_value'] = $newsletter_term->tid;
+//      $form['taxonomy'][$newsletter_term->vid]['#prefix'] = '<div class="invisible">';
+//      $form['taxonomy'][$newsletter_term->vid]['#suffix'] = '</div>';
+
+      // Redirect to newsletter_issues view after submitting.
+      $form['buttons']['submit']['#submit'][] = 'og_simplenews_redirect_to_newsletters_list';
+    }
+  }
+
+  if ($form_id == 'simplenews_node_tab_send_form') {
+    $node = og_get_group_context();
+    if ($node) {
+
+      // Don't allow anyone exept admins to send newsletters.
+      if (!og_is_group_admin($node)) {
+        drupal_access_denied();
+        exit();
+      }
+
+      // Set user email as default test email address.
+      global $user;
+      $form['simplenews']['test_address']['#default_value'] = $user->mail;
+
+      // Redirect to newsletter_issues view after submittingp.
+      $form['#submit'][] = 'og_simplenews_redirect_to_newsletters_list';
+    }
+  }
+}
+
+/**
+ * Implements hook_og_links_alter().
+ */
+function og_simplenews_og_links_alter($links, $group_node) {
+  $term = og_simplenews_get_group_newsletter_term($node);
+  if ($term && og_is_group_admin($group_node)) {
+    $links[] = l(t('Newsletter'), 'newsletter');
+  }
+}
+
+/**
+ * Simplenews node form submit handler.
+ */
+function og_simplenews_redirect_to_newsletters_list($form, &$form_state) {
+  // Redirect user to newsletters listing.
+  $form_state['redirect'] = 'newsletter';
+}
+
+/**
+ * Creates newsletter and adds it to node's taxonomy.
+ */
+function og_simplenews_new_group_newsletter($node, $name) {
+
+  // Fetch author data from db. We only need name and email.
+  $account = db_fetch_object(db_query('SELECT name, mail FROM {users} WHERE uid = %d', $node->uid));
+  if (!empty($account->name) && !empty($account->mail)) {
+
+    // Create a newsletter.
+    $tid = og_simplenews_create_newsletter($name, $account->name, $account->mail);
+    $newsletter_term = taxonomy_get_term($tid);
+
+    // Add newsletter term to group so we have them connected.
+    $node->taxonomy[$tid] = $newsletter_term;
+
+    // We're in insert op, so we have to save again.
+    node_save($node);
+  }
+}
+
+/**
+ * Creates a newsletter taxonomy term and adds simplenews settings.
+ *
+ * @param string $name
+ * @param string $from_name
+ * @param string $from_address
+ * @return int
+ */
+function og_simplenews_create_newsletter($name, $from_name, $from_address) {
+
+  // Attach file with type form.
+  require_once drupal_get_path('module', 'simplenews') . '/includes/simplenews.admin.inc';
+
+  // Get simplenews newsletters vocabulary id.
+  $vid = og_simplenews_vid();
+
+  // Create new simplenews newsletter.
+  $form_state['values'] = array(
+    'name' => $name,
+    'description' => '',
+    'weight' => 0,
+    'simplenews_new_account_' => 'none',
+    'simplenews_opt_inout_' => 'hidden',
+    'simplenews_from_name_' => $from_name,
+    'simplenews_from_address_' => $from_address,
+    'simplenews_email_subject_' => '[[simplenews-newsletters-name]] [title-raw]',
+    'simplenews_hyperlinks_' => 1,
+    'vid' => $vid,
+  );
+  drupal_execute('simplenews_admin_types_form', $form_state);
+
+  // Get tid from db.
+  $tid = db_result(db_query("
+      SELECT t.tid
+      FROM {term_data} t
+      WHERE t.vid = %d
+        AND t.name = '%s'
+      ORDER BY t.tid DESC",
+      $form_state['values']['vid'],
+      $form_state['values']['name']));
+
+  return $tid;
+}
+
+/**
+ * Returns newsletter terms of given group node.
+ *
+ * @param stdClass $node
+ * @return array
+ */
+function og_simplenews_get_group_newsletter_terms($node) {
+  $terms = array();
+  $vid = og_simplenews_vid();
+
+  return taxonomy_node_get_terms_by_vocabulary($node, $vid);
+}
+
+/**
+ * Access callback for newsletter manager form. Returns true for
+ * group admins in group space.
+ *
+ * @return boolean
+ */
+function og_simplenews_manager_access() {
+  return ($node = og_get_group_context()) && og_is_group_admin($node);
+}
+
+function og_simplenews_vid() {
+  return variable_get('simplenews_vid', -1);
+}
+
+/**
+ * Returns newsletter term of given group node.
+ *
+ * @param stdClass $node
+ * @return stdClass
+ *
+ * @deprecated
+ */
+function og_simplenews_get_group_newsletter_term($node) {
+  $vid = og_simplenews_vid();
+  foreach ($node->taxonomy as $key => $term) {
+    if ($term->vid == $vid) {
+      return $term;
+    }
+  }
+  return NULL;
+}

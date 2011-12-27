@@ -1,0 +1,24 @@
+<?php
+/**
+ * Dec 21, 2011
+ * @file og_simplenews_feature.module
+ * @author blazey http://drupal.org/user/353861
+ */
+
+/**
+ * Implements hook_menu_alter().
+ */
+function og_simplenews_feature_menu_alter(&$items) {
+
+  // Change access callback.
+  $items['newsletter']['access callback'] = 'og_simplenews_feature_manager_access';
+}
+
+/**
+ * Newsletter manager form access callback.
+ *
+ * @return boolean
+ */
+function og_simplenews_feature_manager_access() {
+  return og_simplenews_manager_access() && spaces_access_feature('view', 'og_simplenews_feature');
+}

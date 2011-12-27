@@ -1,0 +1,16 @@
+name = Og simplenews feature
+description = Adds og_simplenews as scholar feature.
+
+core = 6.x
+
+dependencies[] = og_simplenews
+dependencies[] = features
+dependencies[] = spaces
+
+features[menu_links][] = "features:newsletter"
+features[views][] = "newsletter_issues"
+features[views_api][] = "api:2"
+
+spaces[types] = "og"
+
+package = AAA Meant4
