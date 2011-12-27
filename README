@@ -1,0 +1,6 @@
+Og simplenews module
+Author: Błażej Owczarczyk http://drupal.org/user/353861
+
+Integrates drupal's organic groups with simplenews module. Group administrators can create and manage newsletters (lists of email addresses) and newsletter issuses (emails).
+
+Module was designed for and tested with OpenScholar but should work for every organic group with spaces_og.
